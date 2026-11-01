@@ -16,47 +16,58 @@ There are about 80 everyday messages, plus a few for Mondays, Fridays, and her b
 
 ## How it works
 
-1. Every day, GitHub Actions (free) picks the messages for the next two weeks and posts them at
-   <https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/upcoming.json>
-2. Every morning, a Shortcuts automation on your iPhone reads today's message from that link and texts it to Emma from your number.
+1. Every hour, GitHub Actions (free) posts today's message at a public link:
+   - **Android:** <https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/today.txt>, which holds just today's message
+   - **iPhone:** <https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/upcoming.json>, which holds the next two weeks
+2. Every morning, an automation on your phone reads the link and texts the message to Emma from your number.
 
 You set it up once and never touch it again. GitHub can't send texts by itself for free, so your phone does the sending. That's also why she sees it coming from you.
 
-## Setup (about 10 minutes, once)
+## Android setup (Samsung Galaxy etc.)
 
-### 1. Make the repo public
+Takes about 10 minutes, once. It uses **MacroDroid**, a free automation app. The free version allows 5 automations, and this needs 1.
 
-Your phone can only read the link without a password if the repo is public.
+### 1. Build the automation
 
-**Settings → General →** scroll to **Danger Zone → Change visibility → Make public.**
+1. Install **MacroDroid** from the Play Store, open it, and tap **Add Macro**. Name it something like *Morning text*.
+2. **Trigger:** tap **+** under Triggers, then **Date/Time → Day/Time Trigger**. Set **7:30 AM**, select **all seven days**, and tap **OK**.
+3. **Actions:** tap **+** under Actions and add these four, in order. Each picker has a search icon. If a name differs slightly in your version, search for it.
+   1. **Set Variable**: create a new local **integer** variable named `code` and set it to `0`.
+   2. **HTTP Request**: method **GET**, URL
+      `https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/today.txt`
+      In its options, save the **response** to a new local **string** variable named `message`. Save the **response code** to the `code` variable.
+   3. **If Clause**: add a condition for the variable `code`, set to **equals 200**. MacroDroid adds an **End If** for you.
+   4. **Send SMS**: put it between the *If* and the *End If*. Choose **Emma** from your contacts. For the message text, tap the magic-text button (the **…** or **[ ]** icon) and pick the local variable `message`. The field should end up showing `[lv=message]`.
+4. Tap the **✓** to save. Allow SMS permission when MacroDroid asks.
 
-That makes the code, the message list, and Emma's first name visible to anyone. It also makes the Actions logs public, and they show the day's message. Secrets (anything under Settings → Secrets) stay hidden.
+The *code = 200* check means that if the internet or GitHub is down that morning, nothing gets sent. She'll never get an error message or a repeat.
 
-### 2. Check the link works
+### 2. Stop Samsung from putting MacroDroid to sleep
 
-Open **Actions → Morning message → Run workflow → Run workflow**. When it's done (about 30 seconds), the link above should show a list of dates and messages. It also refreshes on its own every day and whenever you edit `messages.txt`.
+Samsung phones aggressively freeze background apps, and a frozen MacroDroid misses the 7:30 trigger. Do both of these:
 
-### 3. Set up the automation on your iPhone
+- **Settings → Apps → MacroDroid → Battery →** choose **Unrestricted**.
+- **Settings → Battery → Background usage limits:** make sure MacroDroid isn't under *Sleeping apps* or *Deep sleeping apps*, then add it to **Never sleeping apps**.
+
+### 3. Test it on yourself
+
+Temporarily change the Send SMS recipient to **your own number**. Then change the trigger time to two minutes from now, save, and wait. You should get today's message. Then put Emma back as the recipient and the time back to 7:30.
+
+The texts go out as normal SMS from your number, and they should show up in your Messages conversation with her like any text you send.
+
+## iPhone setup
 
 In the **Shortcuts** app:
 
-1. Go to the **Automation** tab, tap **+**, and choose **Time of Day**.
-2. Set the time (say 7:30 AM) and **Daily**. Pick **Run Immediately** and turn off **Notify When Run**. Tap **Next**, then **New Blank Automation**.
-3. Add these actions in order. Use the search bar at the bottom to find each one.
-   1. **Format Date**: leave the date as *Current Date*. Set *Date Format* to **Custom** and the format string to `yyyy-MM-dd`.
-   2. **Get Contents of URL**: paste
-      `https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/upcoming.json`
-   3. **Get Dictionary from Input**: it picks up *Contents of URL* automatically.
-   4. **Get Dictionary Value**: set it to *Get **Value** for **Formatted Date** in **Dictionary***. For the key, tap the field and pick the *Formatted Date* variable.
-   5. **If**: set it to *Dictionary Value* **has any value**.
-   6. **Send Message**: drag it inside the *If*. Set the message to *Dictionary Value* and the recipient to **Emma**. Tap the arrow on the action and turn off **Show When Run**.
-4. Tap **Done**.
-
-**Test it on yourself first.** Set the recipient to yourself and tap ▶︎ at the bottom of the editor. You should get today's message. Then switch the recipient back to Emma.
-
-The *If* step means that if something ever breaks on GitHub's side, your phone sends nothing. It won't send her an error message. Your phone needs to be on at send time, but it can be locked. If it's dead that morning, the message for that day is skipped.
-
-**On Android?** The same setup works with an automation app like Tasker or MacroDroid. It fetches the link and sends an SMS.
+1. Go to the **Automation** tab, tap **+**, and choose **Time of Day**. Set **7:30 AM** and **Daily**, pick **Run Immediately**, and turn off **Notify When Run**. Tap **Next**, then **New Blank Automation**.
+2. Add these actions in order:
+   1. **Format Date**: date *Current Date*, format **Custom**, format string `yyyy-MM-dd`.
+   2. **Get Contents of URL**: `https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/upcoming.json`
+   3. **Get Dictionary from Input**
+   4. **Get Dictionary Value**: get **Value** for key *Formatted Date* in *Dictionary*.
+   5. **If**: *Dictionary Value* **has any value**.
+   6. **Send Message**: put it inside the *If*. Message *Dictionary Value*, recipient **Emma**. Expand the action and turn off **Show When Run**.
+3. Tap **Done**. Test it by setting the recipient to yourself and tapping ▶︎.
 
 ## Changing things
 
@@ -69,10 +80,11 @@ The *If* step means that if something ever breaks on GitHub's side, your phone s
 | `RECIPIENT_NAME` | `Emma` | Fills in `{name}` in messages |
 | `BIRTHDAY` | none | `MM-DD`. That day gets a birthday message. |
 | `SIGN_OFF` | none | Added on its own line at the end of each message |
+| `TIMEZONE` | `America/Boise` | Decides when "today" starts. Set it to your phone's timezone if you move. |
 
-The send time lives in the iPhone automation, so change it there.
+The send time lives in the phone automation, so change it there.
 
-To see what's coming up, or to check messages after editing:
+To preview what's coming, or to check messages after editing:
 
 ```sh
 python send.py --preview 14   # next two weeks
@@ -81,15 +93,16 @@ python -m unittest            # checks every message: plain text, fits one SMS, 
 
 ## Optional: send from GitHub instead of your phone
 
-If you'd rather not depend on your phone, the workflow can send by email (free, through your Gmail) or by text through Twilio (paid, from a separate number). Set the `DELIVERY` variable to `email`, `sms`, or `email,sms`, and add the matching secrets:
+If you'd rather not depend on your phone, [`send.yml`](.github/workflows/send.yml) can send by email (free, through your Gmail) or by text through Twilio (paid, from a separate number). Set the `DELIVERY` variable to `email`, `sms`, or `email,sms`, and add the matching secrets:
 
 - **Email:** `EMAIL_TO`, `SMTP_USERNAME` (your Gmail), and `SMTP_PASSWORD`. The password is a [Google app password](https://myaccount.google.com/apppasswords), which needs 2-Step Verification turned on. Optionally add a variable `EMAIL_FROM_NAME`.
 - **Twilio:** `SMS_TO` (like `+12085551234`), `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM`. Costs a few dollars a month, and US carriers require a registration that takes a few days. Set `SIGN_OFF` so she knows who it's from.
 
-This mode sends at `SEND_TIME` (default `07:30`) in `TIMEZONE` (default `America/Boise`). If you change either, run `python send.py --print-cron` and paste the output over the two `cron` lines in [`.github/workflows/morning-message.yml`](.github/workflows/morning-message.yml). If they don't match, the run fails and tells you why.
+This mode sends at `SEND_TIME` (default `07:30`) in `TIMEZONE`. If you change either, run `python send.py --print-cron` and paste the output over the two `cron` lines in `send.yml`. If they don't match, the run fails and tells you why.
 
 ## Good to know
 
-- The link always holds yesterday plus the next two weeks. Even if GitHub has a bad few days, the phone still finds today's message.
-- GitHub pauses scheduled workflows in public repos after 60 days without activity. The workflow pings GitHub every day to prevent that.
+- `today.txt` refreshes every hour, so it switches to the new day within an hour after midnight.
+- If GitHub were down all night (very rare), `today.txt` would still hold yesterday's message, and the Android automation would send it again. The iPhone version looks up the date and would skip the day instead.
+- GitHub pauses scheduled workflows in public repos after 60 days without activity. The workflow pings GitHub every hour to prevent that.
 - The date alone picks the message, so the same day always gets the same one.

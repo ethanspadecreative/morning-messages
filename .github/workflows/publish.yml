@@ -1,0 +1,63 @@
+name: Publish messages
+
+# Posts today's message and the next two weeks to the `messages` branch, where
+# the phone automation reads them:
+#   https://raw.githubusercontent.com/<owner>/<repo>/messages/today.txt        (Android)
+#   https://raw.githubusercontent.com/<owner>/<repo>/messages/upcoming.json    (iPhone)
+
+on:
+  schedule:
+    # Hourly, so today.txt rolls over to the new day within an hour of midnight
+    # (in TIMEZONE) and one dropped run never matters. Free for public repos.
+    - cron: "11 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the messages branch
+  actions: write # keepalive step below
+
+concurrency:
+  group: publish-messages
+
+env:
+  # Settings > Secrets and variables > Actions > Variables
+  RECIPIENT_NAME: ${{ vars.RECIPIENT_NAME }}
+  TIMEZONE: ${{ vars.TIMEZONE }}
+  BIRTHDAY: ${{ vars.BIRTHDAY }}
+  SIGN_OFF: ${{ vars.SIGN_OFF }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build today's message and the next two weeks
+        run: python send.py --publish "$RUNNER_TEMP/site"
+      - name: Publish to the messages branch
+        working-directory: ${{ runner.temp }}/site
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q -b messages
+          git add today.txt upcoming.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Messages as of $(date -u '+%F %H:%M') UTC"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" messages
+          echo "Today: $(cat today.txt)"
+      - name: Keep the schedules from pausing after 60 quiet days
+        # GitHub pauses scheduled workflows in public repos that go 60 days without
+        # activity. Re-enabling them resets that clock.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in publish.yml send.yml; do
+            gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/enable"
+          done

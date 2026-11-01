@@ -7,8 +7,9 @@ been used, and re-running on the same day picks the same message. No database
 or saved state needed.
 
 Two ways to get it to her:
-  --publish DIR   writes the next two weeks to DIR/upcoming.json; the workflow
-                  posts that file publicly and a phone automation texts it
+  --publish DIR   writes today's message to DIR/today.txt and the next two weeks
+                  to DIR/upcoming.json; the workflow posts both publicly and a
+                  phone automation texts it
   DELIVERY=...    sends it from here by email (SMTP) and/or text (Twilio)
 
 Standard library only. Python 3.9+.
@@ -269,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         "--print-cron", action="store_true", help="print the workflow cron lines for SEND_TIME and TIMEZONE"
     )
     parser.add_argument(
-        "--publish", type=Path, metavar="DIR", help="write the next two weeks to DIR/upcoming.json and exit"
+        "--publish", type=Path, metavar="DIR", help="write DIR/today.txt and DIR/upcoming.json and exit"
     )
     args = parser.parse_args(argv)
 
@@ -306,6 +307,9 @@ def main(argv: list[str] | None = None) -> int:
         path = args.publish / "upcoming.json"
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote {len(data)} days ({min(data)} to {max(data)}) to {path}")
+        # Just the message, no trailing newline, so a phone can text the file as-is.
+        (args.publish / "today.txt").write_text(data[today.isoformat()], encoding="utf-8")
+        print(f"Wrote today's message ({today}) to {args.publish / 'today.txt'}")
         return 0
 
     methods = [m.strip().lower() for m in env("DELIVERY").split(",") if m.strip()]

@@ -70,6 +70,9 @@ class Publishing(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 send.main(["--publish", tmp, "--date", "2026-11-01"])
             data = json.loads(Path(tmp, "upcoming.json").read_text())
+            today = Path(tmp, "today.txt").read_text()
+        self.assertEqual(today, data["2026-11-01"])
+        self.assertFalse(today.endswith("\n"))
         self.assertEqual(min(data), "2026-10-31")
         self.assertEqual(max(data), "2026-11-15")
         self.assertEqual(len(data), 16)
