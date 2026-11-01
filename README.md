@@ -1,6 +1,6 @@
 # Morning messages
 
-Texts Emma one short, warm message every morning, from your own number, for free. You don't type anything. The messages aim to sound like you, not a greeting card.
+Texts Emma one short, warm message every morning at 7:30. GitHub sends it automatically from a texting service's number, not yours, so your phone isn't involved. The messages aim to sound like a person, not a greeting card.
 
 A few from the list:
 
@@ -14,95 +14,77 @@ A few from the list:
 
 There are about 80 everyday messages, plus a few for Mondays, Fridays, and her birthday. Nothing repeats until the whole list has been used, and she never gets the same message two days running.
 
-## How it works
+## Cost
 
-1. Every hour, GitHub Actions (free) posts today's message at a public link:
-   - **Android:** <https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/today.txt>, which holds just today's message
-   - **iPhone:** <https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/upcoming.json>, which holds the next two weeks
-2. Every morning, an automation on your phone reads the link and texts the message to Emma from your number.
+GitHub Actions is free. The texts go through [Textbelt](https://textbelt.com), which charges per text with no subscription or carrier paperwork. It's about $3 for 50 texts, so roughly $2 a month for one text a day. Check their site for current prices.
 
-You set it up once and never touch it again. GitHub can't send texts by itself for free, so your phone does the sending. That's also why she sees it coming from you.
+Sending a real text from a number that isn't yours costs something no matter which service you use. Textbelt is the cheapest and fastest to set up. Other options are listed [below](#other-ways-to-send).
 
-## Android setup (Samsung Galaxy etc.)
+## Setup (about 5 minutes)
 
-Takes about 10 minutes, once. It uses **MacroDroid**, a free automation app. The free version allows 5 automations, and this needs 1.
+### 1. Buy Textbelt credits
 
-### 1. Build the automation
+Go to [textbelt.com](https://textbelt.com), buy the smallest pack, and copy the **API key** it gives you.
 
-1. Install **MacroDroid** from the Play Store, open it, and tap **Add Macro**. Name it something like *Morning text*.
-2. **Trigger:** tap **+** under Triggers, then **Date/Time → Day/Time Trigger**. Set **7:30 AM**, select **all seven days**, and tap **OK**.
-3. **Actions:** tap **+** under Actions and add these four, in order. Each picker has a search icon. If a name differs slightly in your version, search for it.
-   1. **Set Variable**: create a new local **integer** variable named `code` and set it to `0`.
-   2. **HTTP Request**: method **GET**, URL
-      `https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/today.txt`
-      In its options, save the **response** to a new local **string** variable named `message`. Save the **response code** to the `code` variable.
-   3. **If Clause**: add a condition for the variable `code`, set to **equals 200**. MacroDroid adds an **End If** for you.
-   4. **Send SMS**: put it between the *If* and the *End If*. Choose **Emma** from your contacts. For the message text, tap the magic-text button (the **…** or **[ ]** icon) and pick the local variable `message`. The field should end up showing `[lv=message]`.
-4. Tap the **✓** to save. Allow SMS permission when MacroDroid asks.
+### 2. Add two secrets to this repo
 
-The *code = 200* check means that if the internet or GitHub is down that morning, nothing gets sent. She'll never get an error message or a repeat.
+On GitHub, go to **Settings → Secrets and variables → Actions → Secrets → New repository secret**:
 
-### 2. Stop Samsung from putting MacroDroid to sleep
+| Secret | Value |
+|---|---|
+| `TEXTBELT_KEY` | the key from Textbelt |
+| `SMS_TO` | **your own** number for now, like `+12085551234` (you'll switch it to Emma's after testing) |
 
-Samsung phones aggressively freeze background apps, and a frozen MacroDroid misses the 7:30 trigger. Do both of these:
+### 3. Sign the texts
 
-- **Settings → Apps → MacroDroid → Battery →** choose **Unrestricted**.
-- **Settings → Battery → Background usage limits:** make sure MacroDroid isn't under *Sleeping apps* or *Deep sleeping apps*, then add it to **Never sleeping apps**.
+The texts come from a Textbelt number she won't recognize, so they need your name. Go to the **Variables** tab (next to Secrets), click **New repository variable**, and add:
 
-### 3. Test it on yourself
+| Variable | Value |
+|---|---|
+| `SIGN_OFF` | `- ` plus your name, e.g. `- E` |
 
-Temporarily change the Send SMS recipient to **your own number**. Then change the trigger time to two minutes from now, save, and wait. You should get today's message. Then put Emma back as the recipient and the time back to 7:30.
+Every text then ends with that on its own line.
 
-The texts go out as normal SMS from your number, and they should show up in your Messages conversation with her like any text you send.
+### 4. Test it
 
-## iPhone setup
+Go to **Actions → Send morning text → Run workflow**, uncheck **Dry run**, and click **Run workflow**. Today's message should reach your phone within a minute or so.
 
-In the **Shortcuts** app:
+### 5. Point it at Emma
 
-1. Go to the **Automation** tab, tap **+**, and choose **Time of Day**. Set **7:30 AM** and **Daily**, pick **Run Immediately**, and turn off **Notify When Run**. Tap **Next**, then **New Blank Automation**.
-2. Add these actions in order:
-   1. **Format Date**: date *Current Date*, format **Custom**, format string `yyyy-MM-dd`.
-   2. **Get Contents of URL**: `https://raw.githubusercontent.com/ethanspadecreative/morning-messages/messages/upcoming.json`
-   3. **Get Dictionary from Input**
-   4. **Get Dictionary Value**: get **Value** for key *Formatted Date* in *Dictionary*.
-   5. **If**: *Dictionary Value* **has any value**.
-   6. **Send Message**: put it inside the *If*. Message *Dictionary Value*, recipient **Emma**. Expand the action and turn off **Show When Run**.
-3. Tap **Done**. Test it by setting the recipient to yourself and tapping ▶︎.
+Edit the `SMS_TO` secret and put in Emma's number. That's it: from now on she gets a text every morning at 7:30 Mountain time.
+
+## Good to know
+
+- **Credits.** When fewer than a week's worth are left, the run shows a warning on GitHub. Once they run out, the run fails and GitHub emails you, so you'll know to top up.
+- **Replies** go to Textbelt, not to you. The sending number can also change from day to day. The sign-off is how she knows it's you, and you might give her a heads-up before the first one.
+- **Timing.** GitHub often starts scheduled runs a few minutes late, so a text might land at 7:40. Very rarely GitHub skips a run entirely.
+- **Her timezone.** If Emma isn't on Mountain time, set the `TIMEZONE` variable (e.g. `America/Chicago`). Then run `python send.py --print-cron` and paste the output over the two `cron` lines in [`.github/workflows/send.yml`](.github/workflows/send.yml). The same goes for changing `SEND_TIME`. If the two don't match, the run fails and says why.
+- **To check without sending:** run the workflow with **Dry run** checked. It prints today's message and how many Textbelt credits are left.
 
 ## Changing things
 
-**The messages** are in [`messages.txt`](messages.txt), one per line. You can edit it right on GitHub. `{name}` becomes her name. Delete any that don't sound like you, and add your own. Inside jokes beat anything on that list. Your edits reach the link within a minute or so.
+**The messages** are in [`messages.txt`](messages.txt), one per line, and you can edit them right on GitHub. `{name}` becomes her name. Delete any that don't sound like you, and add your own. Inside jokes beat anything on that list.
 
-**Settings.** These go under **Settings → Secrets and variables → Actions → Variables**. All are optional.
+**Settings** are all optional. They go under **Settings → Secrets and variables → Actions → Variables**.
 
 | Variable | Default | What it does |
 |---|---|---|
+| `SIGN_OFF` | none | Added on its own line at the end of each text |
 | `RECIPIENT_NAME` | `Emma` | Fills in `{name}` in messages |
 | `BIRTHDAY` | none | `MM-DD`. That day gets a birthday message. |
-| `SIGN_OFF` | none | Added on its own line at the end of each message |
-| `TIMEZONE` | `America/Boise` | Decides when "today" starts. Set it to your phone's timezone if you move. |
+| `TIMEZONE` | `America/Boise` | Emma's timezone (see above) |
+| `SEND_TIME` | `07:30` | Local time to send, 24-hour (see above) |
 
-The send time lives in the phone automation, so change it there.
-
-To preview what's coming, or to check messages after editing:
+To see what's coming up, or to check the list after editing:
 
 ```sh
 python send.py --preview 14   # next two weeks
 python -m unittest            # checks every message: plain text, fits one SMS, no duplicates, nothing cheesy
 ```
 
-## Optional: send from GitHub instead of your phone
+## Other ways to send
 
-If you'd rather not depend on your phone, [`send.yml`](.github/workflows/send.yml) can send by email (free, through your Gmail) or by text through Twilio (paid, from a separate number). Set the `DELIVERY` variable to `email`, `sms`, or `email,sms`, and add the matching secrets:
+Whichever service has its secrets filled in gets used automatically. To pick explicitly, set the `DELIVERY` variable to `textbelt`, `twilio`, `email`, or a combination like `textbelt,email`.
 
-- **Email:** `EMAIL_TO`, `SMTP_USERNAME` (your Gmail), and `SMTP_PASSWORD`. The password is a [Google app password](https://myaccount.google.com/apppasswords), which needs 2-Step Verification turned on. Optionally add a variable `EMAIL_FROM_NAME`.
-- **Twilio:** `SMS_TO` (like `+12085551234`), `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM`. Costs a few dollars a month, and US carriers require a registration that takes a few days. Set `SIGN_OFF` so she knows who it's from.
-
-This mode sends at `SEND_TIME` (default `07:30`) in `TIMEZONE`. If you change either, run `python send.py --print-cron` and paste the output over the two `cron` lines in `send.yml`. If they don't match, the run fails and tells you why.
-
-## Good to know
-
-- `today.txt` refreshes every hour, so it switches to the new day within an hour after midnight.
-- If GitHub were down all night (very rare), `today.txt` would still hold yesterday's message, and the Android automation would send it again. The iPhone version looks up the date and would skip the day instead.
-- GitHub pauses scheduled workflows in public repos after 60 days without activity. The workflow pings GitHub every hour to prevent that.
-- The date alone picks the message, so the same day always gets the same one.
+- **Twilio:** texts from one fixed number that's yours to keep, and she can reply to it. Costs about $20 up front for the US carrier registration, then a few dollars a month, and approval takes one to two weeks. Secrets: `SMS_TO`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM`, which is your Twilio number or a Messaging Service SID starting with `MG`.
+- **Email (free):** sends from a Gmail account. You could make a separate one just for this. Secrets: `EMAIL_TO`, `SMTP_USERNAME` (the Gmail address), and `SMTP_PASSWORD`, a [Google app password](https://myaccount.google.com/apppasswords) that requires 2-Step Verification. Optionally add a variable `EMAIL_FROM_NAME`.

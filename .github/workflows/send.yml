@@ -1,12 +1,10 @@
-name: Send from GitHub (optional)
-
-# Only needed if you'd rather GitHub send the message by email or Twilio than
-# have your phone text it. Does nothing unless the DELIVERY variable is set.
+name: Send morning text
 
 on:
   schedule:
     # GitHub cron runs on UTC, so 7:30am Mountain needs one line for daylight time
-    # and one for standard time; send.py sends from whichever matches today.
+    # and one for standard time; send.py sends from whichever matches today and
+    # the other run exits quietly.
     # Changed SEND_TIME or TIMEZONE? Run `python send.py --print-cron` and paste
     # the result over these two lines.
     - cron: "30 13 * * *"
@@ -14,39 +12,43 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run: only print today's message"
+        description: "Dry run: print today's message and remaining credits, don't send"
         type: boolean
         default: true
 
 permissions:
   contents: read
+  actions: write # keepalive step below
+
+concurrency:
+  group: send-morning-text
 
 jobs:
   send:
-    if: vars.DELIVERY != '' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       SCHEDULE: ${{ github.event.schedule }}
       # Settings > Secrets and variables > Actions > Variables
       RECIPIENT_NAME: ${{ vars.RECIPIENT_NAME }}
+      SIGN_OFF: ${{ vars.SIGN_OFF }}
       TIMEZONE: ${{ vars.TIMEZONE }}
       SEND_TIME: ${{ vars.SEND_TIME }}
       BIRTHDAY: ${{ vars.BIRTHDAY }}
-      SIGN_OFF: ${{ vars.SIGN_OFF }}
       DELIVERY: ${{ vars.DELIVERY }}
       EMAIL_SUBJECT: ${{ vars.EMAIL_SUBJECT }}
       EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
       SMTP_HOST: ${{ vars.SMTP_HOST }}
       SMTP_PORT: ${{ vars.SMTP_PORT }}
       # Settings > Secrets and variables > Actions > Secrets
-      EMAIL_TO: ${{ secrets.EMAIL_TO }}
-      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       SMS_TO: ${{ secrets.SMS_TO }}
+      TEXTBELT_KEY: ${{ secrets.TEXTBELT_KEY }}
       TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
       TWILIO_FROM: ${{ secrets.TWILIO_FROM }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,3 +56,11 @@ jobs:
           python-version: "3.12"
       - name: Send today's message
         run: python send.py ${{ inputs.dry_run && '--dry-run' || '' }}
+      - name: Keep the schedule from pausing after 60 quiet days
+        # GitHub pauses scheduled workflows in public repos that go 60 days without
+        # activity. Re-enabling the workflow resets that clock.
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/send.yml/enable"

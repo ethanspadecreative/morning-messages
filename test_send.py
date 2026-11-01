@@ -6,8 +6,8 @@ import io
 import json
 import os
 import re
-import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 from zoneinfo import ZoneInfo
@@ -55,36 +55,104 @@ class PickingMessages(unittest.TestCase):
         self.assertEqual(send.compose("Hi {name}.", "Emma", "- E"), "Hi Emma.\n- E")
 
 
-class Publishing(unittest.TestCase):
-    def test_upcoming_matches_what_each_day_would_send(self):
-        start = dt.date(2026, 12, 30)
-        data = send.upcoming(MESSAGES, start, 5, "Emma")
-        self.assertEqual(list(data), ["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02", "2027-01-03"])
-        for key, message in data.items():
-            template = send.pick_message(MESSAGES, dt.date.fromisoformat(key))[1]
-            self.assertEqual(message, send.compose(template, "Emma"))
-        self.assertNotIn("{name}", "".join(data.values()))
+class FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
 
-    def test_publish_writes_json_covering_yesterday_through_two_weeks_out(self):
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"TIMEZONE": "America/Boise"}):
-            with contextlib.redirect_stdout(io.StringIO()):
-                send.main(["--publish", tmp, "--date", "2026-11-01"])
-            data = json.loads(Path(tmp, "upcoming.json").read_text())
-            today = Path(tmp, "today.txt").read_text()
-        self.assertEqual(today, data["2026-11-01"])
-        self.assertFalse(today.endswith("\n"))
-        self.assertEqual(min(data), "2026-10-31")
-        self.assertEqual(max(data), "2026-11-15")
-        self.assertEqual(len(data), 16)
+    def __exit__(self, *exc):
+        return False
 
-    def test_no_delivery_set_sends_nothing(self):
-        env = {"DELIVERY": "", "SCHEDULE": ""}
-        with mock.patch.dict(os.environ, env), mock.patch.object(send, "send_email") as email, \
-                mock.patch.object(send, "send_sms") as sms, contextlib.redirect_stdout(io.StringIO()) as out:
-            self.assertEqual(send.main([]), 0)
-        email.assert_not_called()
-        sms.assert_not_called()
-        self.assertIn("nothing is sent", out.getvalue())
+
+def fake_textbelt(reply):
+    """Stand-in for urlopen that records requests and answers with `reply`."""
+    calls = []
+
+    def urlopen(request, timeout=None):
+        calls.append(request)
+        return FakeResponse(json.dumps(reply).encode())
+
+    return urlopen, calls
+
+
+NO_DELIVERY_ENV = {
+    k: "" for k in ("DELIVERY", "TEXTBELT_KEY", "TWILIO_ACCOUNT_SID", "EMAIL_TO", "SMTP_USERNAME", "SCHEDULE")
+}
+
+
+class Delivery(unittest.TestCase):
+    def run_main(self, env, argv=()):
+        with mock.patch.dict(os.environ, {**NO_DELIVERY_ENV, **env}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            code = send.main(list(argv))
+        return code, out.getvalue()
+
+    def test_picks_delivery_from_whichever_secrets_are_set(self):
+        cases = [
+            ({}, []),
+            ({"TEXTBELT_KEY": "k"}, ["textbelt"]),
+            ({"TWILIO_ACCOUNT_SID": "AC1"}, ["twilio"]),
+            ({"TEXTBELT_KEY": "k", "TWILIO_ACCOUNT_SID": "AC1"}, ["textbelt"]),
+            ({"EMAIL_TO": "e@x.com", "SMTP_USERNAME": "me@x.com"}, ["email"]),
+            ({"DELIVERY": "sms, email"}, ["twilio", "email"]),
+        ]
+        for env, expected in cases:
+            with mock.patch.dict(os.environ, {**NO_DELIVERY_ENV, **env}):
+                self.assertEqual(send.delivery_methods(), expected, env)
+
+    def test_unknown_delivery_fails(self):
+        with mock.patch.dict(os.environ, {**NO_DELIVERY_ENV, "DELIVERY": "pigeon"}):
+            with self.assertRaises(SystemExit):
+                send.delivery_methods()
+
+    def test_nothing_set_up_sends_nothing_and_does_not_fail(self):
+        with mock.patch.object(send.urllib.request, "urlopen") as urlopen:
+            code, out = self.run_main({})
+        self.assertEqual(code, 0)
+        urlopen.assert_not_called()
+        self.assertIn("Nothing is set up", out)
+
+    def test_textbelt_sends_todays_message_with_sign_off(self):
+        urlopen, calls = fake_textbelt({"success": True, "textId": "1", "quotaRemaining": 40})
+        env = {"TEXTBELT_KEY": "abc", "SMS_TO": "+12085550100", "SIGN_OFF": "- E"}
+        with mock.patch.object(send.urllib.request, "urlopen", urlopen):
+            code, out = self.run_main(env, ["--date", "2026-11-04"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].full_url, "https://textbelt.com/text")
+        form = dict(urllib.parse.parse_qsl(calls[0].data.decode()))
+        expected = send.compose(send.pick_message(MESSAGES, dt.date(2026, 11, 4))[1], "Emma", "- E")
+        self.assertEqual(form, {"phone": "+12085550100", "message": expected, "key": "abc"})
+        self.assertIn("Texts left: 40", out)
+        self.assertNotIn("::warning::", out)
+
+    def test_textbelt_warns_when_credits_run_low(self):
+        urlopen, _ = fake_textbelt({"success": True, "quotaRemaining": 3})
+        env = {"TEXTBELT_KEY": "abc", "SMS_TO": "+12085550100", "SIGN_OFF": "- E"}
+        with mock.patch.object(send.urllib.request, "urlopen", urlopen):
+            _, out = self.run_main(env)
+        self.assertIn("::warning::Only 3 Textbelt texts left", out)
+
+    def test_textbelt_failure_fails_the_run(self):
+        urlopen, _ = fake_textbelt({"success": False, "error": "Out of quota"})
+        env = {"TEXTBELT_KEY": "abc", "SMS_TO": "+12085550100", "SIGN_OFF": "- E"}
+        with mock.patch.object(send.urllib.request, "urlopen", urlopen):
+            with self.assertRaises(SystemExit) as raised:
+                self.run_main(env)
+        self.assertIn("Out of quota", str(raised.exception))
+
+    def test_texting_without_a_sign_off_warns(self):
+        urlopen, _ = fake_textbelt({"success": True, "quotaRemaining": 40})
+        with mock.patch.object(send.urllib.request, "urlopen", urlopen):
+            _, out = self.run_main({"TEXTBELT_KEY": "abc", "SMS_TO": "+12085550100"})
+        self.assertIn("SIGN_OFF isn't set", out)
+
+    def test_dry_run_checks_credits_but_sends_nothing(self):
+        urlopen, calls = fake_textbelt({"success": True, "quotaRemaining": 48})
+        env = {"TEXTBELT_KEY": "abc", "SMS_TO": "+12085550100", "SIGN_OFF": "- E"}
+        with mock.patch.object(send.urllib.request, "urlopen", urlopen):
+            _, out = self.run_main(env, ["--dry-run"])
+        self.assertEqual([c.full_url for c in calls], ["https://textbelt.com/quota/abc"])
+        self.assertIn("Textbelt texts left: 48", out)
 
 
 class Scheduling(unittest.TestCase):

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Pick (and optionally send) one short good-morning message a day.
+"""Send Emma one short good-morning text a day.
 
 Messages live in messages.txt. The date alone decides which one goes out: the
 list is walked in a shuffled order, so nothing repeats until every message has
 been used, and re-running on the same day picks the same message. No database
 or saved state needed.
 
-Two ways to get it to her:
-  --publish DIR   writes today's message to DIR/today.txt and the next two weeks
-                  to DIR/upcoming.json; the workflow posts both publicly and a
-                  phone automation texts it
-  DELIVERY=...    sends it from here by email (SMTP) and/or text (Twilio)
+Delivery (picked automatically from whichever secrets are set, or forced with
+DELIVERY=textbelt,twilio,email):
+  textbelt  a real text from a Textbelt number; pay-per-text, no registration
+  twilio    a real text from your own Twilio number; needs carrier registration
+  email     an email through SMTP (e.g. your Gmail); free
 
 Standard library only. Python 3.9+.
 """
@@ -38,14 +38,17 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 HERE = Path(__file__).resolve().parent
 EPOCH = dt.date(2024, 1, 1)  # a Monday; anchors the rotation
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-DELIVERY_METHODS = ("email", "sms")
+DELIVERY_METHODS = ("textbelt", "twilio", "email")
+TEXT_METHODS = ("textbelt", "twilio")
+LOW_CREDIT = 7  # warn when Textbelt has less than a week of texts left
+USER_AGENT = "morning-messages/1.0"
 
 
 # --------------------------------------------------------------------------- config
 
 
 def env(name: str, default: str = "") -> str:
-    # GitHub passes unset repository variables as empty strings, so "" means unset.
+    # GitHub passes unset variables and secrets as empty strings, so "" means unset.
     return os.environ.get(name, "").strip() or default
 
 
@@ -80,6 +83,30 @@ def parse_timezone(value: str) -> ZoneInfo:
         return ZoneInfo(value)
     except (ZoneInfoNotFoundError, ValueError):
         sys.exit(f"TIMEZONE should be a name like America/Boise, got {value!r}")
+
+
+def delivery_methods() -> list[str]:
+    """DELIVERY if set, otherwise whatever has its secrets filled in."""
+    explicit = env("DELIVERY")
+    if explicit:
+        methods = []
+        for raw in explicit.split(","):
+            method = raw.strip().lower()
+            method = "twilio" if method == "sms" else method  # older name
+            if method not in DELIVERY_METHODS:
+                sys.exit(f"DELIVERY should be some of {', '.join(DELIVERY_METHODS)}. Got {explicit!r}")
+            if method not in methods:
+                methods.append(method)
+        return methods
+
+    methods = []
+    if env("TEXTBELT_KEY"):
+        methods.append("textbelt")
+    elif env("TWILIO_ACCOUNT_SID"):
+        methods.append("twilio")
+    if env("EMAIL_TO") and env("SMTP_USERNAME"):
+        methods.append("email")
+    return methods
 
 
 # ------------------------------------------------------------------ picking a message
@@ -147,22 +174,6 @@ def compose(template: str, name: str, sign_off: str = "") -> str:
     return f"{text}\n{sign_off}" if sign_off else text
 
 
-def upcoming(
-    sections: dict[str, list[str]],
-    start: dt.date,
-    days: int,
-    name: str,
-    sign_off: str = "",
-    birthday: tuple[int, int] | None = None,
-) -> dict[str, str]:
-    """{"YYYY-MM-DD": message} for `days` days from `start`."""
-    out = {}
-    for offset in range(days):
-        day = start + dt.timedelta(days=offset)
-        out[day.isoformat()] = compose(pick_message(sections, day, birthday)[1], name, sign_off)
-    return out
-
-
 # ------------------------------------------------------------------------ scheduling
 
 
@@ -199,12 +210,67 @@ def should_send(cron: str, now_utc: dt.datetime, send_time: dt.time, tz: ZoneInf
     if slot not in cron_slots(send_time, tz, today.year):
         sys.exit(
             f"The workflow cron {cron!r} doesn't match SEND_TIME {send_time:%H:%M} in {tz.key}. "
-            "Run `python send.py --print-cron` and paste its output into the workflow file."
+            "Run `python send.py --print-cron` and paste its output into .github/workflows/send.yml."
         )
     return slot == utc_slot(today, send_time, tz)
 
 
 # -------------------------------------------------------------------------- delivery
+
+
+def _request_json(request: urllib.request.Request, service: str) -> dict:
+    request.add_header("User-Agent", USER_AGENT)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        sys.exit(f"{service} rejected the request ({error.code}): {error.read().decode(errors='replace')}")
+    except urllib.error.URLError as error:
+        sys.exit(f"Couldn't reach {service}: {error.reason}")
+
+
+def send_textbelt(body: str) -> None:
+    fields = {"phone": require("SMS_TO"), "message": body, "key": require("TEXTBELT_KEY")}
+    request = urllib.request.Request(
+        "https://textbelt.com/text", data=urllib.parse.urlencode(fields).encode(), method="POST"
+    )
+    result = _request_json(request, "Textbelt")
+    if not result.get("success"):
+        sys.exit(f"Textbelt didn't send the text: {result.get('error') or result}")
+    left = result.get("quotaRemaining")
+    print(f"Sent by text via Textbelt. Texts left: {left}.")
+    if isinstance(left, int) and left < LOW_CREDIT:
+        # Shows up on the run in GitHub. Once credits hit zero the run fails, and
+        # GitHub emails you about failed runs.
+        print(f"::warning::Only {left} Textbelt texts left. Buy more at textbelt.com.")
+
+
+def textbelt_quota(key: str) -> int | None:
+    request = urllib.request.Request(f"https://textbelt.com/quota/{urllib.parse.quote(key, safe='')}")
+    request.add_header("User-Agent", USER_AGENT)
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return json.load(response).get("quotaRemaining")
+    except (urllib.error.URLError, ValueError):
+        return None
+
+
+def send_twilio(body: str) -> None:
+    sid = require("TWILIO_ACCOUNT_SID")
+    token = require("TWILIO_AUTH_TOKEN")
+    sender = require("TWILIO_FROM")
+    fields = {"To": require("SMS_TO"), "Body": body}
+    # A Messaging Service SID (starts with MG) is what US A2P-registered senders use.
+    fields["MessagingServiceSid" if sender.startswith("MG") else "From"] = sender
+    request = urllib.request.Request(
+        f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+        data=urllib.parse.urlencode(fields).encode(),
+        method="POST",
+    )
+    credentials = base64.b64encode(f"{sid}:{token}".encode()).decode()
+    request.add_header("Authorization", f"Basic {credentials}")
+    result = _request_json(request, "Twilio")
+    print(f"Sent by text via Twilio (status: {result.get('status')}).")
 
 
 def send_email(body: str, subject: str) -> None:
@@ -235,29 +301,6 @@ def send_email(body: str, subject: str) -> None:
     print("Sent by email.")
 
 
-def send_sms(body: str) -> None:
-    sid = require("TWILIO_ACCOUNT_SID")
-    token = require("TWILIO_AUTH_TOKEN")
-    sender = require("TWILIO_FROM")
-    fields = {"To": require("SMS_TO"), "Body": body}
-    # A Messaging Service SID (starts with MG) is what US A2P-registered senders use.
-    fields["MessagingServiceSid" if sender.startswith("MG") else "From"] = sender
-
-    request = urllib.request.Request(
-        f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-        data=urllib.parse.urlencode(fields).encode(),
-        method="POST",
-    )
-    credentials = base64.b64encode(f"{sid}:{token}".encode()).decode()
-    request.add_header("Authorization", f"Basic {credentials}")
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            result = json.load(response)
-    except urllib.error.HTTPError as error:
-        sys.exit(f"Twilio rejected the message ({error.code}): {error.read().decode(errors='replace')}")
-    print(f"Sent by text (Twilio status: {result.get('status')}).")
-
-
 # ------------------------------------------------------------------------------ main
 
 
@@ -268,9 +311,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", type=dt.date.fromisoformat, help="act as if today were YYYY-MM-DD")
     parser.add_argument(
         "--print-cron", action="store_true", help="print the workflow cron lines for SEND_TIME and TIMEZONE"
-    )
-    parser.add_argument(
-        "--publish", type=Path, metavar="DIR", help="write DIR/today.txt and DIR/upcoming.json and exit"
     )
     args = parser.parse_args(argv)
 
@@ -299,23 +339,7 @@ def main(argv: list[str] | None = None) -> int:
             print(textwrap.indent(compose(template, name, sign_off), "  "))
         return 0
 
-    if args.publish:
-        # Start a day back so a phone a timezone or two away still finds "today".
-        # Two weeks ahead means a few failed runs in a row don't leave it empty.
-        data = upcoming(sections, today - dt.timedelta(days=1), 16, name, sign_off, birthday)
-        args.publish.mkdir(parents=True, exist_ok=True)
-        path = args.publish / "upcoming.json"
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        print(f"Wrote {len(data)} days ({min(data)} to {max(data)}) to {path}")
-        # Just the message, no trailing newline, so a phone can text the file as-is.
-        (args.publish / "today.txt").write_text(data[today.isoformat()], encoding="utf-8")
-        print(f"Wrote today's message ({today}) to {args.publish / 'today.txt'}")
-        return 0
-
-    methods = [m.strip().lower() for m in env("DELIVERY").split(",") if m.strip()]
-    unknown = [m for m in methods if m not in DELIVERY_METHODS]
-    if unknown:
-        sys.exit(f"DELIVERY should be email, sms, or email,sms. Got {env('DELIVERY')!r}")
+    methods = delivery_methods()
 
     schedule = env("SCHEDULE")  # the cron line that started this run; empty for manual runs
     if schedule and not args.date and not should_send(schedule, now, send_time, tz):
@@ -324,13 +348,19 @@ def main(argv: list[str] | None = None) -> int:
 
     _, template = pick_message(sections, today, birthday)
     body = compose(template, name, sign_off)
-
     print(f"Message for {today:%a %b %d}:\n{textwrap.indent(body, '  ')}")
+
     if not methods:
-        print("DELIVERY isn't set, so nothing is sent from here (the phone automation does the sending).")
+        print("Nothing is set up to send with yet. Add the TEXTBELT_KEY and SMS_TO secrets (see README).")
         return 0
+    if not sign_off and any(m in TEXT_METHODS for m in methods):
+        print("::warning::SIGN_OFF isn't set, so Emma won't know who these texts are from.")
+
     if args.dry_run:
         print(f"Dry run, nothing sent. Would have gone by: {', '.join(methods)}.")
+        if "textbelt" in methods:
+            left = textbelt_quota(require("TEXTBELT_KEY"))
+            print(f"Textbelt texts left: {left if left is not None else 'unknown (check the key)'}.")
         return 0
 
     subject = (
@@ -340,10 +370,12 @@ def main(argv: list[str] | None = None) -> int:
         .replace("{weekday}", f"{today:%A}")
     )
     for method in methods:
-        if method == "email":
-            send_email(body, subject)
+        if method == "textbelt":
+            send_textbelt(body)
+        elif method == "twilio":
+            send_twilio(body)
         else:
-            send_sms(body)
+            send_email(body, subject)
     return 0
 
 
