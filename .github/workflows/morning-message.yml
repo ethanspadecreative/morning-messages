@@ -1,0 +1,98 @@
+name: Morning message
+
+on:
+  schedule:
+    # GitHub cron runs on UTC, so 7:30am Mountain needs one line for daylight time
+    # and one for standard time. The send job only sends from whichever matches
+    # today. (These times only matter for email/Twilio; the phone automation keeps
+    # its own time.) Changed SEND_TIME or TIMEZONE? Run `python send.py --print-cron`
+    # and paste the result over these two lines.
+    - cron: "30 13 * * *"
+    - cron: "30 14 * * *"
+  push:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: if email/Twilio is set up, only print today's message"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  # Settings > Secrets and variables > Actions > Variables
+  RECIPIENT_NAME: ${{ vars.RECIPIENT_NAME }}
+  TIMEZONE: ${{ vars.TIMEZONE }}
+  SEND_TIME: ${{ vars.SEND_TIME }}
+  BIRTHDAY: ${{ vars.BIRTHDAY }}
+  SIGN_OFF: ${{ vars.SIGN_OFF }}
+
+jobs:
+  # Posts the next two weeks of messages to the `messages` branch, which a phone
+  # automation reads at
+  # https://raw.githubusercontent.com/<owner>/<repo>/messages/upcoming.json
+  publish:
+    if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # push the messages branch
+      actions: write # keepalive step below
+    concurrency:
+      group: publish-messages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the next two weeks of messages
+        run: python send.py --publish "$RUNNER_TEMP/site"
+      - name: Publish to the messages branch
+        working-directory: ${{ runner.temp }}/site
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q -b messages
+          git add upcoming.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Upcoming messages as of $(date -u +%F)"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" messages
+          echo "Published https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/messages/upcoming.json"
+      - name: Keep the schedule from pausing after 60 quiet days
+        # GitHub pauses scheduled workflows in public repos that go 60 days without
+        # activity. Re-enabling the workflow each day resets that clock.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/morning-message.yml/enable"
+
+  # Optional: sends from here by email and/or Twilio. Skipped unless the DELIVERY
+  # variable is set.
+  send:
+    if: github.event_name != 'push' && (vars.DELIVERY != '' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SCHEDULE: ${{ github.event.schedule }}
+      DELIVERY: ${{ vars.DELIVERY }}
+      EMAIL_SUBJECT: ${{ vars.EMAIL_SUBJECT }}
+      EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      # Settings > Secrets and variables > Actions > Secrets
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMS_TO: ${{ secrets.SMS_TO }}
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+      TWILIO_FROM: ${{ secrets.TWILIO_FROM }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Send today's message
+        run: python send.py ${{ inputs.dry_run && '--dry-run' || '' }}

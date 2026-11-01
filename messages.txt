@@ -1,0 +1,117 @@
+# One message per line. {name} becomes her name.
+# Lines starting with # are ignored, and so are blank lines.
+#
+# Sections:
+#   [general]            the everyday pool
+#   [monday] ... [sunday] used on that weekday instead of [general] (optional)
+#   [birthday]           used on her birthday if BIRTHDAY is set
+#
+# House rules: keep it short, plain, and something you'd actually text.
+# No "sunshine", no "queen", no inspirational-poster stuff.
+
+[general]
+Morning, {name}. No real reason for this, just thinking about you.
+Hope you slept okay. Coffee first, everything else second.
+Quick reminder that you're one of my favorite people. That's it. Go have your day.
+If today gets annoying, you're allowed to be annoyed about it. You'll still handle it fine.
+I don't say it enough, but I'm really glad we're family.
+Eat an actual breakfast today, not just whatever's closest to the door.
+Hi {name}. Hope today is boring in the good way.
+Thinking about you this morning. Hope something small goes your way today.
+You don't have to be productive every hour today. A few good ones is plenty.
+Just checking in. No need to reply, I know mornings are a lot.
+Hope the first song you hear today is a good one.
+For what it's worth, you're doing a lot better than you give yourself credit for.
+Whatever's on your plate today, I'd bet on you.
+Drink some water before the coffee. Or after. I'm not in charge of you.
+Hope today's kind to you. If it isn't, text me and we'll complain about it together.
+Morning. Wishing you a good parking spot and a short line wherever you're headed.
+Hey {name}. Nothing new here, just wanted to say hi before the day gets going.
+Hope you learn something interesting today. Bonus points if it's completely useless.
+Reminder that you're allowed to say no to things today.
+Hope your coffee stays the right temperature for longer than usual.
+Morning, {name}. I'm glad you exist. Weird way to start a text, still true.
+Hope something makes you laugh today harder than it probably deserves.
+Take the long way somewhere today if you've got the time.
+I think about how lucky I got in the cousin department more than you'd guess.
+Whatever you're worried about is probably going to be fine. And if it isn't, you won't be dealing with it alone.
+Go easy on yourself today. You'd go easy on anyone else.
+Hope your morning is quiet and your afternoon is even better.
+Small goal for today: one thing that's just for you.
+Just want you to start the day knowing someone's in your corner.
+Hope everyone you deal with today is reasonable. Low bar, I know.
+Something reminded me of you yesterday and it made me smile. That's the whole message.
+You're good company, you know that? Even over text.
+Open a window if it's nice out. Close it if it isn't. I'm full of wisdom today.
+Good morning, {name}. Hope the day has more good surprises than bad ones.
+However yesterday went, today doesn't have to match it.
+I'm proud of you. I don't need a specific reason.
+Wishing you a full battery and zero urgent emails.
+You're allowed to do the easy version of things today.
+Hi {name}. Hope you get ten minutes today to sit down and actually enjoy something.
+Family stuff is genuinely better when you're there. Just wanted you to know.
+If anyone's rude to you today, assume they're having a worse day than you and let it go.
+You've handled harder things than whatever today has planned.
+Hope you're taking care of yourself. If not, consider this a gentle nudge.
+Go outside for a minute today, even if it's just to stand there.
+I trust your judgment more than most people's. Including mine, some days.
+Hi. No advice, no agenda. Just hi.
+Hope today gives you a reason to text someone "you won't believe this."
+Hope one thing today goes better than you expected.
+Whatever you've got going on, I hope it goes the way you want it to.
+Love you. Have a good one.
+Here's your official permission to take a real lunch break today.
+You're one of the people who makes things feel normal when they're not. That's a rare skill.
+Hope the people around you today appreciate you. If they don't, that's on them.
+Leave a few minutes earlier than you need to. Future you will be smug about it.
+Sending you a calm morning and a decent snack.
+Eat something green today. Okay, that's my one bossy text for the month.
+Glad you're my cousin. I'd pick you even if we got a say in it.
+Hope you hear from someone you've been meaning to catch up with.
+You don't have to have it all figured out. Nobody does, they're just quieter about it.
+Thinking about you and hoping the morning is treating you well.
+Try doing one thing today a little slower than usual. See if it's nicer.
+Thanks for being someone I never have to pretend around.
+Hope your day has a long stretch where nothing needs you.
+You're doing fine. Better than fine, probably.
+If you need anything this week, I'm a text away. I mean that.
+Hope you get to be a little lazy today and not feel bad about it.
+Small unsolicited fact to start your day: you're great.
+Hope today's the kind of day you forget about because nothing went wrong.
+Hope the weather's on your side today.
+Nothing clever this morning. Just wanted to be one of the first nice things in your day.
+Unclench your jaw. Drop your shoulders. There, that's better.
+Text back the people you like today. Not me necessarily. But maybe me.
+Hey {name}. Hope you're feeling rested. If not, hope the coffee's strong.
+Good day to finish something you've been putting off. Or to keep putting it off. Your call.
+You make hard things look a lot easier than they are. I notice.
+Hope something you've been waiting on finally comes through.
+If today's a lot, just do the next thing. Then the one after that.
+Wishing you green lights and a working printer.
+No pressure to be your best self today. Your regular self is pretty great.
+Hope you get some good news today, even if it's just that something you ordered shipped.
+I'm lucky to know you. Figured you should hear that from someone today.
+
+[monday]
+It's Monday. You don't have to like it, you just have to get through it, and you will.
+Monday again. Hope the week starts slow and gets better from here.
+New week. Hope it's a good one, or at least a short-feeling one.
+Monday morning. Lower your expectations for the inbox and raise them for lunch.
+Happy Monday, which nobody has ever said and meant. Hope yours is decent anyway.
+Week's just getting started. Pace yourself.
+Hope this week treats you better than last week did. Or just as well, if last week was good.
+
+[friday]
+Made it to Friday. Hope you've got something good planned, or nothing planned, which is also good.
+It's Friday. Coast if you can.
+Friday. Whatever didn't get done this week can wait until Monday. Probably.
+Happy Friday, {name}. Hope the weekend's already looking good.
+You got through another week. Do something nice for yourself this weekend.
+It's Friday, so today counts as half a day in spirit.
+
+[birthday]
+Happy birthday, {name}. Hope today is easy, the food is good, and nobody makes you do anything you don't want to.
+Happy birthday. Another year of knowing you is a good year for me. Hope it's a great one for you.
+Happy birthday, {name}. I hope this year is a good one. You've earned a good one.
+Happy birthday. Eat the cake first, worry about everything else tomorrow.
+Happy birthday, {name}. Really glad you were born. Even more glad we're related.
